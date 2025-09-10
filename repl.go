@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/jdfincher/pokedexcli/internal/pokeapi"
 )
@@ -12,7 +13,7 @@ import (
 type cliCommand struct {
 	name        string
 	description string
-	callback    func(c *pokeapi.Config) (*pokeapi.Config, error)
+	callback    func(*pokeapi.Client) (*pokeapi.Client, error)
 }
 
 func getCommands() (commands map[string]cliCommand) {
@@ -31,13 +32,13 @@ func cleanInput(text string) []string {
 	return clean
 }
 
-func commandExit(c *pokeapi.Config) (*pokeapi.Config, error) {
+func commandExit(client *pokeapi.Client) (*pokeapi.Client, error) {
 	fmt.Println("Closing the Pokedex... Goodbye!")
 	os.Exit(0)
-	return c, nil
+	return client, nil
 }
 
-func commandHelp(c *pokeapi.Config) (*pokeapi.Config, error) {
+func commandHelp(client *pokeapi.Client) (*pokeapi.Client, error) {
 	fmt.Print(`
 ░█░█░█▀▀░█▀█░█▀▀░█▀▀
 ░█░█░▀▀█░█▀█░█░█░█▀▀
@@ -48,63 +49,61 @@ func commandHelp(c *pokeapi.Config) (*pokeapi.Config, error) {
 	for _, v := range commands {
 		fmt.Println(v.name + ": " + v.description)
 	}
-	fmt.Printf("\n")
-	return c, nil
+	fmt.Print("\n")
+	return client, nil
 }
 
-func commandMap(c *pokeapi.Config) (*pokeapi.Config, error) {
-	if c == nil {
-		config, err := pokeapi.GetConfig("https://pokeapi.co/api/v2/location-area/")
-		if err != nil {
-			return config, err
-		}
-		fmt.Println("********************")
-		for i := 0; i < len(config.Results); i++ {
-			fmt.Println(config.Results[i].Name)
-		}
-		fmt.Println("********************")
-		return config, nil
-	} else {
-		config, err := pokeapi.GetConfig(c.Next)
-		if err != nil {
-			return config, err
-		}
-		fmt.Println("********************")
-		for i := 0; i < len(config.Results); i++ {
-			fmt.Println(config.Results[i].Name)
-		}
-		fmt.Println("********************")
-		return config, nil
-	}
-}
-
-func commandMapBack(c *pokeapi.Config) (*pokeapi.Config, error) {
+func commandMap(client *pokeapi.Client) (*pokeapi.Client, error) {
 	var err error
-	if c == nil {
-		fmt.Println("Use command 'map' to advance")
-		return c, fmt.Errorf("error: cannot go backwards, already at beggining")
-	}
-	if c.Previous != "" {
-		c, err = pokeapi.GetConfig(c.Previous)
+	if client.Cfg.Next == "" {
+		client.Cfg, err = client.Get(client.BaseURL + "/location-area/")
+		if err != nil {
+			return client, err
+		}
 	} else {
-		fmt.Println("Use Command 'map to advance")
-		return c, fmt.Errorf("error: cannot go backwards, already at beggining")
-	}
-	if err != nil {
-		return c, fmt.Errorf("error retrieving previous: %w", err)
-	}
-	fmt.Println("********************")
-	for i := 0; i < len(c.Results); i++ {
-		fmt.Println(c.Results[i].Name)
+		client.Cfg, err = client.Get(client.Cfg.Next)
+		if err != nil {
+			return client, err
+		}
 	}
 	fmt.Println("********************")
-	return c, nil
+	for i := 0; i < len(client.Cfg.Results); i++ {
+		fmt.Println(client.Cfg.Results[i].Name)
+	}
+	fmt.Println("********************")
+	return client, nil
+}
+
+func commandMapBack(client *pokeapi.Client) (*pokeapi.Client, error) {
+	var err error
+	if client.Cfg == nil {
+		client.Cfg, err = client.Get(client.BaseURL + "/location-area/")
+		if err != nil {
+			return client, err
+		}
+		fmt.Println("Already at the beginning of list, use 'map' command to advance")
+		return client, nil
+	} else if client.Cfg.Previous == "" {
+		fmt.Println("Already at the beginning of list, use 'map' command to advance")
+		return client, nil
+	} else {
+		client.Cfg, err = client.Get(client.Cfg.Previous)
+		if err != nil {
+			return client, err
+		}
+		fmt.Println("********************")
+		for i := 0; i < len(client.Cfg.Results); i++ {
+			fmt.Println(client.Cfg.Results[i].Name)
+		}
+		fmt.Println("********************")
+	}
+	return client, nil
 }
 
 func repLoop() {
 	scanner := bufio.NewScanner(os.Stdin)
 	commands := getCommands()
-	var config *pokeapi.Config
+	client := pokeapi.NewClient(5 * time.Minute)
 	var err error
 	for {
 		fmt.Print("Pokedex > ")
@@ -116,9 +115,9 @@ func repLoop() {
 			fmt.Println("Unknown Command")
 			continue
 		}
-		config, err = com.callback(config)
+		client, err = com.callback(client)
 		if err != nil {
-			fmt.Printf("error:%v\n", err)
+			fmt.Print(err)
 		}
 	}
 }
