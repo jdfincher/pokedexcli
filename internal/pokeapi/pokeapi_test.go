@@ -9,17 +9,17 @@ func TestFetchData(t *testing.T) {
 	const baseURL = "https://pokeapi.co/api/v2/"
 	cases := []struct {
 		url      string
-		cfg      *Config
+		loc      *Locations
 		expected string
 	}{
 		{
 			url:      "location-area/",
-			cfg:      new(Config),
+			loc:      new(Locations),
 			expected: "canalave-city-area",
 		},
 		{
 			url:      "location-area/?offset=20&limit=20",
-			cfg:      new(Config),
+			loc:      new(Locations),
 			expected: "mt-coronet-1f-route-216",
 		},
 	}
@@ -33,12 +33,12 @@ func TestFetchData(t *testing.T) {
 				_ = data
 				return
 			}
-			config, err := configDecoder(data)
+			loc, err := locationsDecoder(data)
 			if err != nil {
 				t.Errorf("failed to decode: %v", err)
 			}
-			if config.Results[0].Name != c.expected {
-				t.Errorf("Actual:%v does not match Expected:%v", config.Results[0].Name, c.expected)
+			if loc.Results[0].Name != c.expected {
+				t.Errorf("Actual:%v does not match Expected:%v", loc.Results[0].Name, c.expected)
 			}
 		})
 	}

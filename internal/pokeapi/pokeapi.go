@@ -12,7 +12,16 @@ import (
 	"github.com/jdfincher/pokedexcli/internal/pokecache"
 )
 
-type Config struct {
+type Pokemon struct {
+	PokemonEncounters []struct {
+		Pokemon struct {
+			Name string `json:"name"`
+			URL  string `json:"url"`
+		} `json:"pokemon"`
+	} `json:"pokemon_encounters"`
+}
+
+type Locations struct {
 	Count    int    `json:"count"`
 	Next     string `json:"next"`
 	Previous string `json:"previous"`
@@ -25,19 +34,21 @@ type Config struct {
 type Client struct {
 	Cache   *pokecache.Cache
 	BaseURL string
-	Cfg     *Config
+	Loc     *Locations
+	Pok     *Pokemon
 }
 
 func NewClient(interval time.Duration) *Client {
 	client := &Client{
 		Cache:   pokecache.NewCache(interval),
 		BaseURL: "https://pokeapi.co/api/v2/",
-		Cfg:     new(Config),
+		Loc:     new(Locations),
+		Pok:     new(Pokemon),
 	}
 	return client
 }
 
-func (c *Client) Get(url string) (*Config, error) {
+func (c *Client) Get(url string) (*Client, error) {
 	if c == nil {
 		return nil, errors.New("error: cache is not initialized or is nil")
 	}
@@ -49,19 +60,47 @@ func (c *Client) Get(url string) (*Config, error) {
 			return nil, err
 		} else {
 			c.Cache.Add(url, d)
-			c.Cfg, err = configDecoder(d)
+			c.Loc, err = locationsDecoder(d)
 			if err != nil {
 				return nil, err
 			}
-			return c.Cfg, nil
+			return c, nil
 		}
 	} else {
 		var err error
-		c.Cfg, err = configDecoder(v)
+		c.Loc, err = locationsDecoder(v)
 		if err != nil {
 			return nil, err
 		}
-		return c.Cfg, nil
+		return c, nil
+	}
+}
+
+func (c *Client) GetPok(url string) (*Client, error) {
+	if c == nil {
+		return nil, errors.New("error: cache is not initialized or is nil")
+	}
+	v, ok := c.Cache.Find(url)
+	if !ok {
+		_ = v
+		d, err := FetchData(url)
+		if err != nil {
+			return nil, err
+		} else {
+			c.Cache.Add(url, d)
+			c.Pok, err = pokemonDecoder(d)
+			if err != nil {
+				return nil, err
+			}
+			return c, nil
+		}
+	} else {
+		var err error
+		c.Pok, err = pokemonDecoder(v)
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
 	}
 }
 
@@ -86,10 +125,18 @@ func FetchData(url string) ([]byte, error) {
 	return data, nil
 }
 
-func configDecoder(data []byte) (*Config, error) {
-	cfg := new(Config)
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("error could not unmarshal data : %w", err)
+func locationsDecoder(data []byte) (*Locations, error) {
+	Loc := new(Locations)
+	if err := json.Unmarshal(data, &Loc); err != nil {
+		return nil, fmt.Errorf("error: could not unmarshal data\ndetails: %w", err)
 	}
-	return cfg, nil
+	return Loc, nil
+}
+
+func pokemonDecoder(data []byte) (*Pokemon, error) {
+	Pok := new(Pokemon)
+	if err := json.Unmarshal(data, &Pok); err != nil {
+		return nil, fmt.Errorf("error: could not unmarshal data\ndetails: %w", err)
+	}
+	return Pok, nil
 }
