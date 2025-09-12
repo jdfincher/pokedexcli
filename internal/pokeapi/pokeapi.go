@@ -10,9 +10,10 @@ import (
 	"time"
 
 	"github.com/jdfincher/pokedexcli/internal/pokecache"
+	"github.com/jdfincher/pokedexcli/internal/pokemon"
 )
 
-type Pokemon struct {
+type PokemonEncounters struct {
 	PokemonEncounters []struct {
 		Pokemon struct {
 			Name string `json:"name"`
@@ -32,23 +33,25 @@ type Locations struct {
 }
 
 type Client struct {
-	Cache   *pokecache.Cache
-	BaseURL string
-	Loc     *Locations
-	Pok     *Pokemon
+	Cache         *pokecache.Cache
+	BaseURL       string
+	Loc           *Locations
+	PokEncounters *PokemonEncounters
+	Pokedex       *pokemon.Pokedex
 }
 
 func NewClient(interval time.Duration) *Client {
 	client := &Client{
-		Cache:   pokecache.NewCache(interval),
-		BaseURL: "https://pokeapi.co/api/v2/",
-		Loc:     new(Locations),
-		Pok:     new(Pokemon),
+		Cache:         pokecache.NewCache(interval),
+		BaseURL:       "https://pokeapi.co/api/v2/",
+		Loc:           new(Locations),
+		PokEncounters: new(PokemonEncounters),
+		Pokedex:       pokemon.NewPokedex(),
 	}
 	return client
 }
 
-func (c *Client) Get(url string) (*Client, error) {
+func (c *Client) GetLocations(url string) (*Client, error) {
 	if c == nil {
 		return nil, errors.New("error: cache is not initialized or is nil")
 	}
@@ -76,27 +79,27 @@ func (c *Client) Get(url string) (*Client, error) {
 	}
 }
 
-func (c *Client) GetPok(url string) (*Client, error) {
+func (c *Client) GetPokEncounters(url string) (*Client, error) {
 	if c == nil {
-		return nil, errors.New("error: cache is not initialized or is nil")
+		return c, errors.New("error: cache is not initialized or is nil")
 	}
 	v, ok := c.Cache.Find(url)
 	if !ok {
 		_ = v
 		d, err := FetchData(url)
 		if err != nil {
-			return nil, err
+			return c, err
 		} else {
 			c.Cache.Add(url, d)
-			c.Pok, err = pokemonDecoder(d)
+			c.PokEncounters, err = pokemonEDecoder(d)
 			if err != nil {
-				return nil, err
+				return c, err
 			}
 			return c, nil
 		}
 	} else {
 		var err error
-		c.Pok, err = pokemonDecoder(v)
+		c.PokEncounters, err = pokemonEDecoder(v)
 		if err != nil {
 			return nil, err
 		}
@@ -104,9 +107,36 @@ func (c *Client) GetPok(url string) (*Client, error) {
 	}
 }
 
+func (c *Client) GetPokemon(url string) (*Client, error) {
+	if c == nil {
+		return c, errors.New("error cache is not initialized or is nil")
+	}
+	v, ok := c.Cache.Find(url)
+	if !ok {
+		_ = v
+		d, err := FetchData(url)
+		if err != nil {
+			return c, err
+		}
+		c.Cache.Add(url, d)
+		c.Pokedex.Target, err = pokeDecoder(d)
+		if err != nil {
+			return c, err
+		}
+		return c, nil
+	} else {
+		var err error
+		c.Pokedex.Target, err = pokeDecoder(v)
+		if err != nil {
+			return c, err
+		}
+		return c, nil
+	}
+}
+
 func FetchData(url string) ([]byte, error) {
 	var data []byte
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 5 * time.Second}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating http.NewRequest: %w", err)
@@ -115,6 +145,8 @@ func FetchData(url string) ([]byte, error) {
 	res, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("error from http.Response: %w", err)
+	} else if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("error: http status code: %v", res.StatusCode)
 	}
 	defer res.Body.Close()
 
@@ -133,10 +165,18 @@ func locationsDecoder(data []byte) (*Locations, error) {
 	return Loc, nil
 }
 
-func pokemonDecoder(data []byte) (*Pokemon, error) {
-	Pok := new(Pokemon)
+func pokemonEDecoder(data []byte) (*PokemonEncounters, error) {
+	Pok := new(PokemonEncounters)
 	if err := json.Unmarshal(data, &Pok); err != nil {
 		return nil, fmt.Errorf("error: could not unmarshal data\ndetails: %w", err)
 	}
 	return Pok, nil
+}
+
+func pokeDecoder(data []byte) (pokemon.Pokemon, error) {
+	pok := *new(pokemon.Pokemon)
+	if err := json.Unmarshal(data, &pok); err != nil {
+		return pok, fmt.Errorf("error: could not unmarshal data\ndtails: %w", err)
+	}
+	return pok, nil
 }
